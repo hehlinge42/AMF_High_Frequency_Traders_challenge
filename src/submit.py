@@ -3,29 +3,22 @@ import pandas as pd
 import logging
 import logzero
 from logzero import logger
+import numpy as np
 
+from pseudo_labelling import aggregate_traders
 
-if __name__ == '__main__':
+def submit(Xy_test, path_to_submission, path_to_full_submission):
 
-    X_test = pd.read_csv("../data/AMF_test_X.csv")
-    trader_names = X_test["Trader"].unique()
-    y_test = pd.DataFrame(columns = ["Trader", "type"])
+    Xy_test['type'] = np.nan
 
-    def predict_trader(idx, sub_df):
+    mask_mxt = Xy_test['MIX'] > 0.5
+    mask_hft = Xy_test['HFT'] > 0.85
+    Xy_test.loc[mask_mxt, 'type'] = 'MIX'
+    Xy_test.loc[mask_hft, 'type'] = 'HFT'
+    Xy_test.fillna('NON HFT', inplace=True)
 
-        if idx % 3 == 0:
-            return "HFT"
-        elif idx % 2 == 0:
-            return "MIX"
-        else:
-            return "NON HFT"
+    logger.info(f"Writing file {path_to_full_submission}")
+    Xy_test.to_csv(path_to_full_submission, index=True)
 
-
-    for idx, trader in enumerate(trader_names):
-
-        sub_df = X_test.loc[X_test["Trader"] == trader]
-        logger.warn(f"Nb records for trader {trader}: {len(sub_df)}")
-        label = predict_trader(idx, sub_df)
-        y_test.loc[idx] = [trader, label]
-
-    y_test.to_csv("../data/claqué_au_sol.csv", index=False)
+    logger.info(f"Writing file {path_to_submission}")
+    Xy_test[['type']].to_csv(path_to_submission, index=True)
