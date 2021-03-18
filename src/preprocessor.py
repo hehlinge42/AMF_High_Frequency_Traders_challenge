@@ -67,5 +67,5 @@ def preprocess(X):
 
     X_transformed = manage_na(X)
     X_transformed = normalize_events(X_transformed)
-    # X_transformed = perform_pca(X_transformed, n_components=5)
+
     return X_transformed

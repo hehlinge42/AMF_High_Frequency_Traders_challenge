@@ -6,6 +6,8 @@ import argparse
 import os
 
 import xgboost as xgb
+import tensorflow as tf
+import tensorflow_addons as tfa
 
 import logging
 import logzero
@@ -17,6 +19,12 @@ from sklearn.decomposition import PCA
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.preprocessing import OneHotEncoder
+
+from tensorflow import keras
+from tensorflow.keras import layers
+from official.nlp import optimization  # to create AdamW optmizer
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 
 from preprocessor import *
 from submit import submit
@@ -38,6 +46,75 @@ def drop_duplicates_x(X):
     X_transformed.set_index(['Trader', 'Share', 'Day'], inplace=True)
     return X_transformed
 
+def feature_engineer(X):
+
+    X['Nb_trade'] = X['NbSecondWithAtLeatOneTrade'] * X['MeanNbTradesBySecond']
+    X['min_vs_max_two_events'] = X['max_time_two_events'] / X['min_time_two_events']
+    X['10_vs_90_two_events'] = X['90_p_time_two_events'] / X['10_p_time_two_events']
+    X['25_vs_75_two_events'] = X['75_p_time_two_events'] / X['25_p_time_two_events']
+    X['min_vs_max_cancel'] = X['max_lifetime_cancel'] / X['min_lifetime_cancel']
+    X['10_vs_90_two_cancel'] = X['90_p_lifetime_cancel'] / X['10_p_lifetime_cancel']
+    X['25_vs_75_two_cancel'] = X['75_p_lifetime_cancel'] / X['25_p_lifetime_cancel']
+    return X
+
+
+def create_model():
+
+    classifier_model = keras.Sequential(
+    [
+        layers.Dense(20, input_dim=24, activation="relu", name="layer1"),
+        layers.Dense(3, activation='softmax', name="layer2"),
+    ])
+
+    loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+    metrics = tfa.metrics.F1Score(num_classes=3)
+    
+    classifier_model.compile(optimizer='adam',
+                         loss=loss,
+                         metrics=metrics)
+
+    return classifier_model
+
+
+
+def train_model(X_train, y_train_cat, epochs=15):
+
+    def build_classifier_model():
+        inputs = tf.keras.layers.Input(shape=())
+        x = tf.keras.layers.Dense(20, input_dim=X_train.shape[1], activation='relu')
+        # x = tf.keras.layers.Dropout(0.1)(x)
+        outputs = tf.keras.layers.Dense(3, activation='softmax')(x)
+        return tf.keras.Model(inputs, outputs)
+
+    classifier_model = keras.Sequential(
+    [
+        layers.Dense(20, input_dim=X_train.shape[1], activation="relu", name="layer1"),
+        layers.Dense(3, activation='softmax', name="layer2"),
+    ])
+
+    # classifier_model = build_classifier_model()
+    loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+    metrics = tfa.metrics.F1Score(num_classes=3)
+
+    steps_per_epoch = len(X_train)
+    num_train_steps = steps_per_epoch * epochs
+    num_warmup_steps = int(0.1 * num_train_steps)
+
+    init_lr = 3e-5
+    optimizer = optimization.create_optimizer(init_lr=init_lr,
+                                            num_train_steps=num_train_steps,
+                                            num_warmup_steps=num_warmup_steps,
+                                            optimizer_type='adamw')
+    
+    classifier_model.compile(optimizer=optimizer,
+                         loss=loss,
+                         metrics=metrics)
+
+    # history = classifier_model.fit(X_train, y_train_cat, 32, epochs=epochs, validation_split=0.20)
+
+    return classifier_model, optimizer
+
+
 
 if __name__ == '__main__':
 
@@ -55,6 +132,10 @@ if __name__ == '__main__':
     X_test = drop_duplicates_x(X_test)
     y_train = unpack_y(X_train, y_train)
 
+    X_train = feature_engineer(X_train)
+    X_test = feature_engineer(X_test)
+    logger.info(f"X_train shape {X_train.shape}, X_test.shape = {X_test.shape}")
+
     org_X_test = X_test.copy()
     org_X_train = X_train.copy()
 
@@ -64,14 +145,15 @@ if __name__ == '__main__':
 
         preprocessor = FunctionTransformer(preprocess)
 
-        model = xgb.XGBClassifier(objective='multi:softprob', colsample_bytree=0.7,
-                                    learning_rate=0.05, n_estimators=100, max_depth=10,
+        model = xgb.XGBClassifier(objective='multi:softprob', colsample_bytree=0.2,
+                                    learning_rate=0.05, n_estimators=1000, max_depth=10,
                                     min_child_weight=3, subsample=0.8759, booster='gbtree')
 
         pipe = make_pipeline(preprocessor, model)
         pipe.fit(X_train, y_train)
+        logger.info(f"X_train.head()\n{X_train.head()}")
 
-        y_pred = pipe.predict(X_test)
+        y_pred = pipe.predict_proba(X_test)
         Xy_test = aggregate_traders(X_test, y_pred)
 
         sure_traders = get_sure_traders(Xy_test)
@@ -88,8 +170,8 @@ if __name__ == '__main__':
     path_to_submission = os.path.join('..', 'data', args.submission + '.csv')
     path_to_full_submission = os.path.join('..', 'data', args.submission + '_full.csv')
 
-    y_pred = pipe.predict(org_X_test)
-    y_train_pred = pipe.predict(org_X_train)
+    y_pred = pipe.predict_proba(org_X_test)
+    y_train_pred = pipe.predict_proba(org_X_train)
 
     Xy_train = aggregate_traders(org_X_train, y_train_pred)
     Xy_test = aggregate_traders(org_X_test, y_pred)
