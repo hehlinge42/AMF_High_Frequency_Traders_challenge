@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore")
 
 def unpack_y(X, y):
 
-    Xy = X.merge(y, how="inner", on=["Trader"])
+    Xy = X.merge(y, how="inner", left_on=["Trader"], right_index=True)
     y = Xy['type']
     return y
 
@@ -45,6 +45,14 @@ def drop_duplicates_x(X):
     X_transformed = X.drop_duplicates()
     X_transformed.set_index(['Trader', 'Share', 'Day'], inplace=True)
     return X_transformed
+
+def merge_aggregation(X, X_groupby, name_new_column, feature, statistic):
+
+    new_feature = pd.DataFrame(X_groupby.loc[(feature, statistic)])
+    new_feature.columns = [name_new_column]
+    X = X.merge(new_feature, left_on='Trader', right_index=True)
+    
+    return X
 
 def feature_engineer(X):
 
@@ -55,64 +63,20 @@ def feature_engineer(X):
     X['min_vs_max_cancel'] = X['max_lifetime_cancel'] / X['min_lifetime_cancel']
     X['10_vs_90_two_cancel'] = X['90_p_lifetime_cancel'] / X['10_p_lifetime_cancel']
     X['25_vs_75_two_cancel'] = X['75_p_lifetime_cancel'] / X['25_p_lifetime_cancel']
+
+    # X_groupby = X.groupby(by='Trader').describe()
+    # X_groupby = X_groupby.T
+
+    # X = merge_aggregation(X, X_groupby, "std_mean_time_two_events", "mean_time_two_events", "std")
+    # X = merge_aggregation(X, X_groupby, "mean_OCR_mean", "OCR", "mean")
+    # X = merge_aggregation(X, X_groupby, "mean_OTR_mean", "OTR", "mean")
+    # X = merge_aggregation(X, X_groupby, "mean_lifetime_cancel_std", "mean_lifetime_cancel", "std")
+    # X = merge_aggregation(X, X_groupby, "NbTradeVenueMic_mean", "NbTradeVenueMic", "mean")
+    # X = merge_aggregation(X, X_groupby, "NbTradeVenueMic_std", "NbTradeVenueMic", "std")
+    # X = merge_aggregation(X, X_groupby, "MaxNbTradesBySecond_std", "MaxNbTradesBySecond", "std")
+    # X = merge_aggregation(X, X_groupby, "NbSecondWithAtLeatOneTrade_std", "NbSecondWithAtLeatOneTrade", "std")
+    	
     return X
-
-
-def create_model():
-
-    classifier_model = keras.Sequential(
-    [
-        layers.Dense(20, input_dim=24, activation="relu", name="layer1"),
-        layers.Dense(3, activation='softmax', name="layer2"),
-    ])
-
-    loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-    metrics = tfa.metrics.F1Score(num_classes=3)
-    
-    classifier_model.compile(optimizer='adam',
-                         loss=loss,
-                         metrics=metrics)
-
-    return classifier_model
-
-
-
-def train_model(X_train, y_train_cat, epochs=15):
-
-    def build_classifier_model():
-        inputs = tf.keras.layers.Input(shape=())
-        x = tf.keras.layers.Dense(20, input_dim=X_train.shape[1], activation='relu')
-        # x = tf.keras.layers.Dropout(0.1)(x)
-        outputs = tf.keras.layers.Dense(3, activation='softmax')(x)
-        return tf.keras.Model(inputs, outputs)
-
-    classifier_model = keras.Sequential(
-    [
-        layers.Dense(20, input_dim=X_train.shape[1], activation="relu", name="layer1"),
-        layers.Dense(3, activation='softmax', name="layer2"),
-    ])
-
-    # classifier_model = build_classifier_model()
-    loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-    metrics = tfa.metrics.F1Score(num_classes=3)
-
-    steps_per_epoch = len(X_train)
-    num_train_steps = steps_per_epoch * epochs
-    num_warmup_steps = int(0.1 * num_train_steps)
-
-    init_lr = 3e-5
-    optimizer = optimization.create_optimizer(init_lr=init_lr,
-                                            num_train_steps=num_train_steps,
-                                            num_warmup_steps=num_warmup_steps,
-                                            optimizer_type='adamw')
-    
-    classifier_model.compile(optimizer=optimizer,
-                         loss=loss,
-                         metrics=metrics)
-
-    # history = classifier_model.fit(X_train, y_train_cat, 32, epochs=epochs, validation_split=0.20)
-
-    return classifier_model, optimizer
 
 
 
@@ -126,15 +90,14 @@ if __name__ == '__main__':
 
     X_train = pd.read_csv(os.path.join(args.directory, "AMF_train_X.csv"), index_col=['Index'])
     X_test = pd.read_csv(os.path.join(args.directory, "AMF_test_X.csv"), index_col=['Index'])
-    y_train = pd.read_csv(os.path.join(args.directory, "AMF_train_y.csv"))
+    y_train_pack = pd.read_csv(os.path.join(args.directory, "AMF_train_y.csv"), index_col=['Trader'])
 
     X_train = drop_duplicates_x(X_train)
     X_test = drop_duplicates_x(X_test)
-    y_train = unpack_y(X_train, y_train)
+    y_train = unpack_y(X_train, y_train_pack)
 
     X_train = feature_engineer(X_train)
     X_test = feature_engineer(X_test)
-    logger.info(f"X_train shape {X_train.shape}, X_test.shape = {X_test.shape}")
 
     org_X_test = X_test.copy()
     org_X_train = X_train.copy()
@@ -145,13 +108,13 @@ if __name__ == '__main__':
 
         preprocessor = FunctionTransformer(preprocess)
 
-        model = xgb.XGBClassifier(objective='multi:softprob', colsample_bytree=0.2,
-                                    learning_rate=0.05, n_estimators=1000, max_depth=10,
-                                    min_child_weight=3, subsample=0.8759, booster='gbtree')
+        model = xgb.XGBClassifier(objective='multi:softprob', colsample_bytree=0.3,
+                                    learning_rate=0.05, n_estimators=10, max_depth=10,
+                                    min_child_weight=3, subsample=0.8759, booster='gbtree', 
+                                    eval_metric='mlogloss')
 
         pipe = make_pipeline(preprocessor, model)
         pipe.fit(X_train, y_train)
-        logger.info(f"X_train.head()\n{X_train.head()}")
 
         y_pred = pipe.predict_proba(X_test)
         Xy_test = aggregate_traders(X_test, y_pred)
@@ -173,14 +136,5 @@ if __name__ == '__main__':
     y_pred = pipe.predict_proba(org_X_test)
     y_train_pred = pipe.predict_proba(org_X_train)
 
-    Xy_train = aggregate_traders(org_X_train, y_train_pred)
-    Xy_test = aggregate_traders(org_X_test, y_pred)
-
-    Xy_test_voting, Xy_test_voting_full = voting_classifier(Xy_train, Xy_test)
-    logger.info(f"Writing file {path_to_full_submission}")
-    Xy_test.to_csv(path_to_full_submission, index=True)
-
-    logger.info(f"Writing file {path_to_submission}")
-    Xy_test[['type']].to_csv(path_to_submission, index=True)
-
-    # submit(Xy_test, path_to_submission, path_to_full_submission)    
+    Xy_test_voting, Xy_test_voting_full = voting_classifier(org_X_train, y_train_pred, org_X_test, y_pred, y_train_pack)
+    submit(Xy_test_voting, Xy_test_voting_full, path_to_submission, path_to_full_submission)
