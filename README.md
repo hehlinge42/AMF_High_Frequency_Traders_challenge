@@ -23,5 +23,6 @@ The program accepts the following options:
 * -s or –submission [submission name]: base name of submission. The program will output the file directory/submission name.csv, formatted to be submitted, and the file directory/submission name full.csv which outputs the probability of each class for each trader.
 * -l or –loop [nloops]: the maximum number of iterations of the pseudo-labeller. If set to -1, the model will be retrained until the pseudo-labeller finds no trader in the testing set with a sufficient confidence level.
 
+## Contributors
 
 Project realized by @MaximeRedstone, @NicolasMB1996 and @hehlinge42
