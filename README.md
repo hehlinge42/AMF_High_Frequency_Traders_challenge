@@ -16,7 +16,12 @@ The repository contains the following files:
 ## Setup
 
 Our final submission to this challenge can be recovered by launching the following command in the repository on a UNIX terminal:
-```python3 src/amf_classifier.py --directory [path] --submission [submission_name] --loop [nloops]```
+```
+git clone https://github.com/hehlinge42/AMF_High_Frequency_Traders_challenge.git
+cd AMF_High_Frequency_Traders_challenge
+pip install -r requirements.txt
+python3 src/amf_classifier.py --directory [path] --submission [submission_name] --loop [nloops]
+```
 
 The program accepts the following options:
 * -d or –directory [directory]: path to submission directory.
