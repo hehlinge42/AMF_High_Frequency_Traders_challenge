@@ -1,4 +1,5 @@
-# Who are the high-frequency traders? by Autorité des Marchés Financiers
+# Who are the high-frequency traders? 
+by Autorité des Marchés Financiers
 
 This repository provides the code related to our participation to the data challenge "Who are the high-frequency traders" issued by the French Authority of Financial Markets. The aim of this challenge is to build a model able to automatically assign traders to one of the three classes of player: High-Frequency Trader (robot), Non High_Frequency-Trader (human) or MIX (using both techniques).
 
@@ -15,7 +16,7 @@ The repository contains the following files:
 
 ## Setup
 
-Our final submission to this challenge can be recovered by launching the following command in the repository on a UNIX terminal:
+Our final submission to this challenge can be recovered by launching the following commands in the repository on a UNIX terminal:
 ```
 git clone https://github.com/hehlinge42/AMF_High_Frequency_Traders_challenge.git
 cd AMF_High_Frequency_Traders_challenge
