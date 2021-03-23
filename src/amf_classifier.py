@@ -109,7 +109,7 @@ if __name__ == '__main__':
         preprocessor = FunctionTransformer(preprocess)
 
         model = xgb.XGBClassifier(objective='multi:softprob', colsample_bytree=0.3,
-                                    learning_rate=0.05, n_estimators=10, max_depth=10,
+                                    learning_rate=0.05, n_estimators=500, max_depth=10,
                                     min_child_weight=3, subsample=0.8759, booster='gbtree', 
                                     eval_metric='mlogloss')
 
